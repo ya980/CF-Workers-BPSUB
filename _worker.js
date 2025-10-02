@@ -760,7 +760,7 @@ async function subHtml(request, hostLength = 0, FileName, subProtocol, subConver
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>${FileName} Snipaste订阅生成器</title>
+    <title>${FileName} Snippets订阅生成器</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -1965,7 +1965,7 @@ async function subHtml(request, hostLength = 0, FileName, subProtocol, subConver
                 </a>
             </div>
             <h1>🚀 ${FileName}</h1>
-            <p>Cloudflare Snipaste 订阅生成器</p>
+            <p>Cloudflare Snippets 订阅生成器</p>
         </div>
         
         <div class="form-container">
@@ -2386,7 +2386,7 @@ async function subHtml(request, hostLength = 0, FileName, subProtocol, subConver
         </div>
         
         <div class="footer">
-            <p>© 2025 BPSUB - Powered by Cloudflare Snipaste | 感谢白嫖哥提供维护的 - <a href="https://t.me/v2rayByCf" target="_blank" class="thanks-link" title="访问Snipaste节点分享频道">🔗 Snipaste节点</a></p>
+            <p>© 2025 BPSUB - Powered by Cloudflare Snippets | 感谢白嫖哥提供维护的 - <a href="https://t.me/v2rayByCf" target="_blank" class="thanks-link" title="访问Snipaste节点分享频道">🔗 Snipaste节点</a></p>
         </div>
     </div>
     
@@ -2506,10 +2506,7 @@ async function subHtml(request, hostLength = 0, FileName, subProtocol, subConver
                 } else {
                     input.value = this.value;
                     input.style.display = 'none';
-                    // 只有非默认后端才检查版本
-                    if (this.value !== DEFAULT_SUBAPI) {
-                        checkSubApiVersion(this.value);
-                    }
+                    checkSubApiVersion(this.value);
                 }
                 saveFormData();
             });
