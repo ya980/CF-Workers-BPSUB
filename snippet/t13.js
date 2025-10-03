@@ -67,7 +67,6 @@ export default {
 
             const [客户端, WS接口] = Object.values(new WebSocketPair());
             WS接口.accept();
-            WS接口.send(new Uint8Array([0, 0]));
             启动传输管道(WS接口);
             return new Response(null, { status: 101, webSocket: 客户端 }); //一切准备就绪后，回复客户端WS连接升级成功
         } else {
@@ -92,8 +91,10 @@ async function 启动传输管道(WS接口, TCP接口) {
         });
         async function 解析首包数据(首包数据) {
             const 二进制数据 = new Uint8Array(首包数据);
+            const 版本号 = 二进制数据[0];
             const 验证VL的密钥 = (a, i = 0) => [...a.slice(i, i + 16)].map(b => b.toString(16).padStart(2, '0')).join('').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
             if (FIXED_UUID && 验证VL的密钥(二进制数据.slice(1, 17)) !== FIXED_UUID) throw new Error('UUID验证失败');
+            WS接口.send(new Uint8Array([版本号, 0]));
             const 提取端口索引 = 18 + 二进制数据[17] + 1;
             const 访问端口 = new DataView(二进制数据.buffer, 提取端口索引, 2).getUint16(0);
             if (访问端口 === 53) { //这个处理是应对某些客户端优先强制查询dns的情况，通过加密通道udp over tcp的

@@ -81,7 +81,6 @@ async function 升级WS请求(访问请求) {
     const 创建WS接口 = new WebSocketPair();
     const [客户端, WS接口] = Object.values(创建WS接口);
     WS接口.accept();
-    WS接口.send(new Uint8Array([0, 0]));
     处理WS请求(访问请求, WS接口)
     return new Response(null, { status: 101, webSocket: 客户端 }); //一切准备就绪后，回复客户端WS连接升级成功
 }
@@ -109,6 +108,8 @@ function 转换WS数据头为二进制数据(WS数据头) {
 async function 解析VL标头(二进制数据, WS接口, TCP接口) {
     let 识别地址类型, 访问地址, 地址长度;
     try {
+        const 版本号 = 二进制数据[0];
+        WS接口.send(new Uint8Array([版本号, 0]));
         const 获取数据定位 = 二进制数据[17];
         const 提取端口索引 = 18 + 获取数据定位 + 1;
         const 访问端口 = new DataView(二进制数据.buffer, 提取端口索引, 2).getUint16(0);

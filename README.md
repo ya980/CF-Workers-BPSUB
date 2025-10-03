@@ -208,9 +208,11 @@ A: 设置 `PS` 环境变量，或在优选IP中使用 `#备注` 格式
 - 📢 **交流群组**：[白嫖哥频道](https://t.me/bestip_one)
 
 ## 🙏 致谢
-- [zizifn](https://github.com/zizifn/edgetunnel)
+- [zizifn](https://github.com/zizifn/edgetunnel)：祖师爷
 - **[白嫖哥](https://t.me/bestip_one)**：提供高质量的免费节点服务
-- ~~fftk~~
+- ~~fftk~~：不愿透露姓名的大佬
 - [肥羊短链](https://suburl.v1.mk/)：感谢提供免费短链服务
-- [Mingyu](https://github.com/ymyuuu/workers-vless)
-- [ca110us](https://github.com/ca110us/epeius)
+- [Mingyu](https://github.com/ymyuuu/workers-vless)：ws+xhttp代码
+- [ca110us](https://github.com/ca110us/epeius)：trojan代码
+- [Alexandre Kojève](https://t.me/Enkelte_notif/784)：stallTCP优化
+- @houyiTFG：天书作者

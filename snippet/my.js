@@ -200,6 +200,7 @@ async function handleWebSocket(request) {
             }
 
             const view = new DataView(data);
+            const version = view.getUint8(0); // 提取版本号
             const optLen = view.getUint8(17);
             const cmd = view.getUint8(18 + optLen);
             if (cmd !== 1 && cmd !== 2) return;
@@ -224,7 +225,7 @@ async function handleWebSocket(request) {
                 addr = ipv6.join(':');
             } else return;
             if (addr.includes(atob('c3BlZWQuY2xvdWRmbGFyZS5jb20='))) throw new Error('Access');
-            const header = new Uint8Array([data[0], 0]);
+            const header = new Uint8Array([version, 0]); // 使用提取的版本号
             const payload = data.slice(pos);
 
             // UDP DNS
@@ -429,11 +430,13 @@ async function readVlessHeader(reader) {
 
         const headerLen = hostIndex + hostLen;
         const data = buffer.slice(headerLen, offset);
+        const version = buffer[0]; // 提取版本号
         return {
             hostname,
             port,
             data,
-            resp: new Uint8Array([buffer[0], 0]),
+            version,
+            resp: new Uint8Array([version, 0]), // 使用实际版本号而不是 buffer[0]
             reader
         };
     }
