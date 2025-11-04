@@ -51,7 +51,7 @@ CF-Workers-BPSUB 是一个基于 Cloudflare Workers 的轻量级 VLESS 代理订
 | `SUBAPI` | 订阅转换后端地址 | `SUBAPI.CMLiussss.net` |
 | `SUBCONFIG` | 订阅转换配置文件 | `https://example.com/config.ini` |
 | `PROXYIP` | 默认代理IP地址 |  `proxyip.fxxk.dedyn.io:443` |
-| `ADD` | 默认优选IP列表，多元素使用`换行`或`,`做间隔 | `1.1.1.1:443#CF`,`8.8.8.8:443#Google` |
+| `ADD` | 默认优选IP列表（支持直接填写`ADDAPI`），多元素使用`换行`或`,`做间隔 | `1.1.1.1:443#CF`,`8.8.8.8:443#Google` |
 | `SUBNAME` | 订阅文件名称 |  `BPSUB` |
 | `PS` | 节点备注后缀 | `感谢白嫖哥` |
 
@@ -216,3 +216,4 @@ A: 设置 `PS` 环境变量，或在优选IP中使用 `#备注` 格式
 - [ca110us](https://github.com/ca110us/epeius)：trojan代码
 - [Alexandre Kojève](https://t.me/Enkelte_notif/784)：stallTCP优化
 - @houyiTFG：天书作者
+- [@GoodLiux](https://t.me/GoodLiux)：提供对白嫖哥源码的优化建议与测试

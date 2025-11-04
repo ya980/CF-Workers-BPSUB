@@ -5,16 +5,15 @@ let 启用SOCKS5反代 = null;
 let 启用SOCKS5全局反代 = false;
 let 我的SOCKS5账号 = '';
 //////////////////////////////////////////////////////////////////////////stall参数////////////////////////////////////////////////////////////////////////
-const KEEPALIVE_INTERVAL = 20000; // 20秒心跳，更频繁
-const STALL_TIMEOUT = 8000; // 8秒无数据认为stall
-const MAX_STALL_COUNT = 8; // 允许8次stall再重连
-const MAX_RECONNECT_COUNT = 15; // 最大重连次数
+// 15秒心跳, 8秒无数据认为stall, 连续8次stall重连, 最多重连24次
+const KEEPALIVE = 15000, STALL_TIMEOUT = 8000, MAX_STALL = 12, MAX_RECONNECT = 24;
 //////////////////////////////////////////////////////////////////////////主要架构////////////////////////////////////////////////////////////////////////
 export default {
     async fetch(request) {
         const url = new URL(request.url);
+        反代IP = 反代IP ? 反代IP : request.cf.colo + '.PrOxYp.CmLiuSsSs.nEt';
         我的SOCKS5账号 = url.searchParams.get('socks5') || url.searchParams.get('http');
-        启用SOCKS5全局反代 = url.searchParams.has('globalproxy');
+        启用SOCKS5全局反代 = url.searchParams.has('globalproxy') || 启用SOCKS5全局反代;
         if (url.pathname.toLowerCase().includes('/socks5=') || (url.pathname.includes('/s5=')) || (url.pathname.includes('/gs5='))) {
             我的SOCKS5账号 = url.pathname.split('5=')[1];
             启用SOCKS5反代 = 'socks5';
@@ -62,228 +61,155 @@ export default {
             反代IP = url.pathname.toLowerCase().split('/ip=')[1];
             启用SOCKS5反代 = null;
         }
-
-        if (request.headers.get('Upgrade') !== 'websocket') {
-            return new Response('Hello World!', { status: 200 });
-        }
-
-        const pair = new WebSocketPair();
-        const [client, server] = [pair[0], pair[1]];
-        server.accept();
-        handleConnection(server);
+        if (request.headers.get('Upgrade') !== 'websocket') return new Response('Hello World!', { status: 200 });
+        const { 0: client, 1: server } = new WebSocketPair();
+        server.accept(); handleConnection(server);
         return new Response(null, { status: 101, webSocket: client });
     }
 };
 function buildUUID(arr, start) {
-    const hex = Array.from(arr.slice(start, start + 16)).map(n => n.toString(16).padStart(2, '0')).join('');
-    return hex.replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
+    return Array.from(arr.slice(start, start + 16)).map(n => n.toString(16).padStart(2, '0')).join('').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5');
 }
 function handleConnection(ws) {
-    let socket, writer, reader;
-    let isFirstMsg = true;
-    let writeQueue = Promise.resolve();
-    let readQueue = Promise.resolve();
-    let lastActivity = Date.now();
-    let lastDataReceived = Date.now();
-    let keepaliveTimer = null;
-    let healthCheckTimer = null;
-    let connectionInfo = null;
-    let isReconnecting = false;
-    let bytesReceived = 0;
-    let reconnectCount = 0;
-    let stallCount = 0;
-    let versionByte = 0;
-    ws.addEventListener('message', async (evt) => {
-        try {
-            if (isFirstMsg) {
-                isFirstMsg = false;
-                const result = await processHandshake(evt.data);
-                socket = result.socket;
-                writer = result.writer;
-                reader = result.reader;
-                connectionInfo = result.info;
-                versionByte = result.version;
-                ws.send(new Uint8Array([versionByte, 0]));
-                startReading();
-                startKeepalive();
-                startHealthCheck();
-            } else {
-                lastActivity = Date.now();
-                writeQueue = writeQueue.then(async () => {
-                    try {
-                        await writer.write(evt.data);
-                    } catch (err) {
-                        console.error('Write error:', err);
-                        throw err;
-                    }
-                }).catch(() => {
-                    if (!isReconnecting) {
-                        setTimeout(() => attemptReconnect(), 100);
-                    }
-                });
-            }
-        } catch (err) {
-            console.error('Connection error:', err);
-            cleanup();
-            ws.close(1006, 'Connection abnormal');
-        }
-    });
+    let socket, writer, reader, info;
+    let isFirstMsg = true, bytesReceived = 0, stallCount = 0, reconnectCount = 0;
+    let lastData = Date.now(); const timers = {}; const dataBuffer = [];
     async function processHandshake(data) {
         const bytes = new Uint8Array(data);
-        const versionByte = bytes[0];
-        const authKey = buildUUID(bytes, 1);
-        if (FIXED_UUID && authKey !== FIXED_UUID) {
-            throw new Error('Auth failed');
-        }
-        const addrInfo = extractAddress(bytes);
-        if (addrInfo.host.includes(atob('c3BlZWQuY2xvdWRmbGFyZS5jb20='))) throw new Error('Access');
+        ws.send(new Uint8Array([bytes[0], 0]));
+        if (FIXED_UUID && buildUUID(bytes, 1) !== FIXED_UUID) throw new Error('Auth failed');
+        const { host, port, payload } = extractAddress(bytes);
+        if (host.includes(atob('c3BlZWQuY2xvdWRmbGFyZS5jb20='))) throw new Error('Access');
         let sock;
         if (启用SOCKS5反代 == 'socks5' && 启用SOCKS5全局反代) {
-            sock = await socks5Connect(addrInfo.host, addrInfo.port);
+            sock = await socks5Connect(host, port);
         } else if (启用SOCKS5反代 == 'http' && 启用SOCKS5全局反代) {
-            sock = await httpConnect(addrInfo.host, addrInfo.port);
+            sock = await httpConnect(host, port);
         } else {
             try {
-                sock = connect({ hostname: addrInfo.host, port: addrInfo.port });
+                sock = connect({ hostname: host, port });
                 await sock.opened;
             } catch {
                 if (启用SOCKS5反代 == 'socks5') {
-                    sock = await socks5Connect(addrInfo.host, addrInfo.port);
+                    sock = await socks5Connect(host, port);
                 } else if (启用SOCKS5反代 == 'http') {
-                    sock = await httpConnect(addrInfo.host, addrInfo.port);
+                    sock = await httpConnect(host, port);
                 } else {
-                    let [反代IP地址, 反代IP端口] = 解析地址端口(反代IP);
+                    const [反代IP地址, 反代IP端口] = await 解析地址端口(反代IP);
                     sock = connect({ hostname: 反代IP地址, port: 反代IP端口 });
                 }
             }
         }
-        await sock.opened;
-        const w = sock.writable.getWriter();
-        const r = sock.readable.getReader();
-        if (addrInfo.payload.length > 0) {
-            await w.write(addrInfo.payload);
-        }
-        return {
-            socket: sock,
-            writer: w,
-            reader: r,
-            info: { host: addrInfo.host, port: addrInfo.port },
-            version: versionByte
-        };
+        await sock.opened; const w = sock.writable.getWriter();
+        if (payload.length) await w.write(payload);
+        return { socket: sock, writer: w, reader: sock.readable.getReader(), info: { host, port } };
     }
-    async function startReading() {
+    async function readLoop() {
         try {
             while (true) {
                 const { done, value } = await reader.read();
-                if (value && value.length > 0) {
+                if (value?.length) {
                     bytesReceived += value.length;
-                    lastDataReceived = Date.now();
-                    lastActivity = Date.now();
-                    stallCount = 0;
-                    reconnectCount = 0;
-                    readQueue = readQueue.then(() => {
-                        if (ws.readyState === 1) {
-                            return ws.send(value);
+                    lastData = Date.now();
+                    stallCount = reconnectCount = 0;
+                    if (ws.readyState === 1) {
+                        await ws.send(value);
+                        while (dataBuffer.length && ws.readyState === 1) {
+                            await ws.send(dataBuffer.shift());
                         }
-                    }).catch(() => { });
+                    } else {
+                        dataBuffer.push(value);
+                    }
                 }
                 if (done) {
                     console.log('Stream ended gracefully');
-                    await attemptReconnect();
+                    await reconnect();
                     break;
                 }
             }
         } catch (err) {
-            console.error('Read error:', err);
-            if (!isReconnecting) {
-                await attemptReconnect();
+            console.error('Read error:', err.message);
+            if (err.message.includes('reset') || err.message.includes('broken')) {
+                console.log('Server closed connection, attempting reconnect');
+                await reconnect();
+            } else {
+                cleanup(); ws.close(1006, 'Connection abnormal');
             }
         }
     }
-    async function attemptReconnect() {
-        if (isReconnecting || !connectionInfo || ws.readyState !== 1) {
-            return;
+    async function reconnect() {
+        if (!info || ws.readyState !== 1 || reconnectCount >= MAX_RECONNECT) {
+            cleanup(); ws.close(1011, 'Reconnection failed'); return;
         }
-        isReconnecting = true;
         reconnectCount++;
         console.log(`Reconnecting (attempt ${reconnectCount})...`);
         try {
-            try {
-                writer?.releaseLock();
-                reader?.releaseLock();
-            } catch (e) { }
-            try {
-                socket?.close();
-            } catch (e) { }
-            await new Promise(resolve => setTimeout(resolve, 300));
-            const sock = connect({
-                hostname: connectionInfo.host,
-                port: connectionInfo.port
-            });
+            cleanupSocket();
+            await new Promise(resolve => setTimeout(resolve, 30 * Math.pow(2, reconnectCount) + Math.random() * 5));
+            const sock = connect({ hostname: info.host, port: info.port });
             await sock.opened;
             socket = sock;
             writer = sock.writable.getWriter();
             reader = sock.readable.getReader();
-            lastActivity = Date.now();
-            lastDataReceived = Date.now();
-            stallCount = 0;
+            lastData = Date.now(); stallCount = 0;
             console.log('Reconnected successfully');
-            isReconnecting = false;
-            startReading();
+            while (dataBuffer.length && ws.readyState === 1) { await writer.write(dataBuffer.shift()); }
+            readLoop();
         } catch (err) {
-            console.error('Reconnect failed:', err);
-            isReconnecting = false;
-            if (ws.readyState === 1 && reconnectCount < MAX_RECONNECT_COUNT) {
-                setTimeout(() => attemptReconnect(), 1000);
-            } else {
-                cleanup();
-                ws.close(1011, 'Reconnection failed');
-            }
+            console.error('Reconnect failed:', err.message);
+            setTimeout(reconnect, 1000);
         }
     }
-    function startKeepalive() {
-        keepaliveTimer = setInterval(async () => {
-            const idle = Date.now() - lastActivity;
-            if (idle > KEEPALIVE_INTERVAL && !isReconnecting) {
+    function startTimers() {
+        timers.keepalive = setInterval(async () => {
+            if (Date.now() - lastData > KEEPALIVE) {
                 try {
-                    await writer.write(new Uint8Array(0));
-                    lastActivity = Date.now();
+                    await writer.write(new Uint8Array(0)); lastData = Date.now();
                 } catch (e) {
-                    console.error('Keepalive failed:', e);
+                    console.error('Keepalive failed:', e.message); reconnect();
                 }
             }
-        }, KEEPALIVE_INTERVAL / 2);
-    }
-    function startHealthCheck() {
-        healthCheckTimer = setInterval(() => {
-            const timeSinceData = Date.now() - lastDataReceived;
-            if (bytesReceived > 0 && timeSinceData > STALL_TIMEOUT && !isReconnecting) {
+        }, KEEPALIVE / 3);
+        timers.health = setInterval(() => {
+            if (bytesReceived && Date.now() - lastData > STALL_TIMEOUT) {
                 stallCount++;
-                console.log(`Stall detected (${stallCount}/${MAX_STALL_COUNT}), ${timeSinceData}ms since last data`);
-                if (stallCount >= MAX_STALL_COUNT) {
-                    console.log('Multiple stalls detected, reconnecting...');
-                    attemptReconnect();
-                }
+                console.log(`Stall detected (${stallCount}/${MAX_STALL}), ${Date.now() - lastData}ms since last data`);
+                if (stallCount >= MAX_STALL) reconnect();
             }
         }, STALL_TIMEOUT / 2);
     }
-    function cleanup() {
-        if (keepaliveTimer) {
-            clearInterval(keepaliveTimer);
-            keepaliveTimer = null;
-        }
-        if (healthCheckTimer) {
-            clearInterval(healthCheckTimer);
-            healthCheckTimer = null;
-        }
+    function cleanupSocket() {
         try {
             writer?.releaseLock();
             reader?.releaseLock();
-        } catch (e) { }
-        try {
             socket?.close();
-        } catch (e) { }
+        } catch { }
     }
+    function cleanup() {
+        Object.values(timers).forEach(clearInterval);
+        cleanupSocket();
+    }
+    ws.addEventListener('message', async evt => {
+        try {
+            if (isFirstMsg) {
+                isFirstMsg = false;
+                ({ socket, writer, reader, info } = await processHandshake(evt.data));
+                startTimers();
+                readLoop();
+            } else {
+                lastData = Date.now();
+                if (socket && writer) {
+                    await writer.write(evt.data);
+                } else {
+                    dataBuffer.push(evt.data);
+                }
+            }
+        } catch (err) {
+            console.error('Connection error:', err.message);
+            cleanup();
+            ws.close(1006, 'Connection abnormal');
+        }
+    });
     ws.addEventListener('close', cleanup);
     ws.addEventListener('error', cleanup);
 }
@@ -291,32 +217,25 @@ function extractAddress(bytes) {
     const offset1 = 18 + bytes[17] + 1;
     const port = (bytes[offset1] << 8) | bytes[offset1 + 1];
     const addrType = bytes[offset1 + 2];
-    let offset2 = offset1 + 3;
-    let length, host;
+    let offset2 = offset1 + 3, host, length;
     switch (addrType) {
         case 1:
             length = 4;
             host = bytes.slice(offset2, offset2 + length).join('.');
             break;
         case 2:
-            length = bytes[offset2];
-            offset2++;
+            length = bytes[offset2++];
             host = new TextDecoder().decode(bytes.slice(offset2, offset2 + length));
             break;
         case 3:
             length = 16;
-            const segments = [];
-            for (let i = 0; i < 8; i++) {
-                const seg = (bytes[offset2 + i * 2] << 8) | bytes[offset2 + i * 2 + 1];
-                segments.push(seg.toString(16));
-            }
-            host = `[${segments.join(':')}]`;
+            host = `[${Array.from({ length: 8 }, (_, i) =>
+                ((bytes[offset2 + i * 2] << 8) | bytes[offset2 + i * 2 + 1]).toString(16)
+            ).join(':')}]`;
             break;
-        default:
-            throw new Error('Invalid address type.');
+        default: throw new Error('Invalid address type.');
     }
-    const payload = bytes.slice(offset2 + length);
-    return { host, port, payload };
+    return { host, port, payload: bytes.slice(offset2 + length) };
 }
 
 async function 获取SOCKS5账号(address) {
@@ -351,19 +270,23 @@ async function 获取SOCKS5账号(address) {
     }
     return { username, password, hostname, port };
 }
-function 解析地址端口(反代IP) {
-    const proxyIP = 反代IP.toLowerCase();
+async function 解析地址端口(proxyIP) {
+    proxyIP = proxyIP.toLowerCase();
     let 地址 = proxyIP, 端口 = 443;
-    if (!proxyIP || proxyIP == '') {
-        地址 = 'proxyip.fxxk.dedyn.io';
-    } else if (proxyIP.includes(']:')) {
-        端口 = proxyIP.split(']:')[1] || 端口;
-        地址 = proxyIP.split(']:')[0] + "]" || 地址;
-    } else if (proxyIP.split(':').length === 2) {
-        端口 = proxyIP.split(':')[1] || 端口;
-        地址 = proxyIP.split(':')[0] || 地址;
+    if (proxyIP.includes('.tp')) {
+        const tpMatch = proxyIP.match(/\.tp(\d+)/);
+        if (tpMatch) 端口 = parseInt(tpMatch[1], 10);
+        return [地址, 端口];
     }
-    if (proxyIP.includes('.tp')) 端口 = proxyIP.split('.tp')[1].split('.')[0] || 端口;
+    if (proxyIP.includes(']:')) {
+        const parts = proxyIP.split(']:');
+        地址 = parts[0] + ']';
+        端口 = parseInt(parts[1], 10) || 端口;
+    } else if (proxyIP.includes(':') && !proxyIP.startsWith('[')) {
+        const colonIndex = proxyIP.lastIndexOf(':');
+        地址 = proxyIP.slice(0, colonIndex);
+        端口 = parseInt(proxyIP.slice(colonIndex + 1), 10) || 端口;
+    }
     return [地址, 端口];
 }
 async function httpConnect(addressRemote, portRemote) {
